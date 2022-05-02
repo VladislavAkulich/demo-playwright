@@ -39,7 +39,6 @@ jobs:
       run: npx playwright install --with-deps
     - name: Setup Allure report
     - uses: actions/github-script@v4
-        id: allure-job-uid
         with:
           result-encoding: string
           script: |
