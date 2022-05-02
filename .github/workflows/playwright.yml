@@ -2,8 +2,28 @@ name: Playwright Tests
 on:
   push:
     branches: [ main, master ]
+    workflow_dispatch:
+    inputs:
+      TEST_ENDPOINT: 
+        description: "Endpoint for tests"
+        required: true
+        default: https://dev.github.com
+      TEST_BROWSER:
+        description: "Browser for tests"
+        required: true
+        default: chrome
+      ALLURE_JOB_RUN_ID:
+        description: "Inner parameter for Allure TestOps"
+        required: false
   pull_request:
     branches: [ main, master ]
+env:
+  ALLURE_ENDPOINT: ${{ secrets.ALLURE_ENDPOINT }}
+  ALLURE_TOKEN: ${{ secrets.ALLURE_TOKEN }}
+  ALLURE_PROJECT_ID: ${{ secrets.ALLURE_PROJECT_ID }}
+  ALLURE_TESTPLAN_PATH: "./testplan.json" # needed to filter the tests
+  ALLURE_RESULTS: "allure-results" # folder with the test results
+  ALLURE_JOB_RUN_ID: ${{ github.event.inputs.ALLURE_JOB_RUN_ID }} 
 jobs:
   test:
     timeout-minutes: 60
@@ -17,11 +37,29 @@ jobs:
       run: npm ci
     - name: Install Playwright
       run: npx playwright install --with-deps
+    - name: Setup Allure report
+    - uses: actions/github-script@v4
+        id: allure-job-uid
+        with:
+          result-encoding: string
+          script: |
+            const result = await github.actions.getWorkflowRun({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              run_id: context.runId,
+            });
+            return `${context.repo.owner}/${context.repo.repo}/actions/workflows/${result.data.workflow_id}`
+      - name: Download allurectl
+        run: |
+          wget https://github.com/allure-framework/allurectl/releases/latest/download/allurectl_linux_386 -O ./allurectl
+          chmod +x ./allurectl
+      - name: Prepare TestPlan
+        run: ./allurectl job-run plan --output-file ${ALLURE_TESTPLAN_PATH}
+      - name: Build with Gradle
+        run: ./allurectl watch -- ./gradlew test # allows sending the test results in the real time 
+        env:
+          ALLURE_JOB_UID: ${{steps.allure-job-uid.outputs.result}}
+          TEST_ENDPOINT: ${{ github.event.inputs.TEST_ENDPOINT }}
+          TEST_BROWSER: ${{ github.event.inputs.TEST_BROWSER }}
     - name: Run Playwright tests
       run: npx playwright test
-    - uses: actions/upload-artifact@v2
-      if: always()
-      with:
-        name: playwright-report
-        path: playwright-report/
-        retention-days: 30
